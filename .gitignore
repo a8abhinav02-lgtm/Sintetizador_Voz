@@ -1,0 +1,10 @@
+# Entorno virtual de Python
+supertonic_env/
+__pycache__/
+*.pyc
+
+# Archivos de audio generados (para no llenar GitHub de gigas de audio)
+*.wav
+
+# Configuraciones del editor
+.vscode/
