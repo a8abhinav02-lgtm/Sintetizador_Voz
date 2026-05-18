@@ -6,6 +6,7 @@ import pypdf
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
+from docx import Document
 import warnings
 
 # Desactivar advertencias molestas de terceras librerías en la consola
@@ -16,7 +17,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 st.set_page_config(page_title="Lector de Novelas Supertonic", page_icon="📖", layout="centered")
 
 st.title("📖 Lector de Novelas y Audiolibros Multiformato")
-st.write("Convierte tus textos (.txt, .pdf, .epub) en audiolibros dramatizados cambiando de voz en los diálogos.")
+st.write("Convierte tus textos (.txt, .pdf, .epub, .docx) en audiolibros dramatizados cambiando de voz en los diálogos.")
 
 # Inicializar el motor TTS con caché
 @st.cache_resource
@@ -65,8 +66,8 @@ velocidad = st.sidebar.slider("Velocidad de Lectura:", min_value=0.7, max_value=
 # --- CUERPO PRINCIPAL: COMPONENTE ARRASTRAR Y SOLTAR ---
 st.subheader("1. Carga tu archivo")
 archivo_subido = st.file_uploader(
-    "Suelte su archivo aquí (Formatos aceptados: .txt, .pdf, .epub)", 
-    type=["txt", "pdf", "epub"]
+    "Suelte su archivo aquí (Formatos aceptados: .txt, .pdf, .epub, .docx)", 
+    type=["txt", "pdf", "epub", "docx"]
 )
 
 if archivo_subido is not None:
@@ -85,20 +86,23 @@ if archivo_subido is not None:
             
         # --- CASO 3: ARCHIVO EPUB ---
         elif archivo_subido.name.endswith(".epub"):
-            # Leer el libro desde el flujo de bytes cargado
             libro = epub.read_epub(archivo_subido)
             paginas_epub = []
-            
-            # Recorrer los elementos internos del EPUB que contengan texto (documentos)
             for item in libro.get_items():
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    # Limpiar el código HTML interno usando BeautifulSoup
                     sopa = BeautifulSoup(item.get_content(), 'html.parser')
                     texto_limpio = sopa.get_text()
                     if texto_limpio.strip():
                         paginas_epub.append(texto_limpio.strip())
-            
             contenido_texto = "\n".join(paginas_epub)
+            
+        # --- CASO 4: ARCHIVO WORD (.DOCX) ---
+        elif archivo_subido.name.endswith(".docx"):
+            # Leer el archivo de Word directamente desde el flujo de datos
+            doc = Document(archivo_subido)
+            # Extraer el texto de cada párrafo omitiendo líneas completamente vacías
+            parrafos_docx = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+            contenido_texto = "\n".join(parrafos_docx)
 
         # Validación de texto extraído
         if not contenido_texto.strip():
