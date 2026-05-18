@@ -3,12 +3,20 @@ import streamlit as st
 import numpy as np
 from supertonic import TTS
 import pypdf
+import ebooklib
+from ebooklib import epub
+from bs4 import BeautifulSoup
+import warnings
+
+# Desactivar advertencias molestas de terceras librerías en la consola
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Configuración de la interfaz gráfica local
 st.set_page_config(page_title="Lector de Novelas Supertonic", page_icon="📖", layout="centered")
 
-st.title("📖 Lector de Novelas y Audiolibros")
-st.write("Convierte tus textos en audiolibros dramatizados cambiando de voz automáticamente en los diálogos.")
+st.title("📖 Lector de Novelas y Audiolibros Multiformato")
+st.write("Convierte tus textos (.txt, .pdf, .epub) en audiolibros dramatizados cambiando de voz en los diálogos.")
 
 # Inicializar el motor TTS con caché
 @st.cache_resource
@@ -55,23 +63,46 @@ velocidad = st.sidebar.slider("Velocidad de Lectura:", min_value=0.7, max_value=
 
 
 # --- CUERPO PRINCIPAL: COMPONENTE ARRASTRAR Y SOLTAR ---
-st.subheader("1. Carga tu capítulo o fragmento")
-archivo_subido = st.file_uploader("Suelte su archivo .txt o .pdf aquí", type=["txt", "pdf"])
+st.subheader("1. Carga tu archivo")
+archivo_subido = st.file_uploader(
+    "Suelte su archivo aquí (Formatos aceptados: .txt, .pdf, .epub)", 
+    type=["txt", "pdf", "epub"]
+)
 
 if archivo_subido is not None:
-    st.success(f"📦 Documento '{archivo_subido.name}' cargado.")
+    st.success(f"📦 Documento '{archivo_subido.name}' cargado con éxito.")
     contenido_texto = ""
 
     try:
-        # Extracción de texto según el formato cargado
+        # --- CASO 1: ARCHIVO TXT ---
         if archivo_subido.name.endswith(".txt"):
             contenido_texto = archivo_subido.read().decode("utf-8", errors="ignore")
+            
+        # --- CASO 2: ARCHIVO PDF ---
         elif archivo_subido.name.endswith(".pdf"):
             lector_pdf = pypdf.PdfReader(archivo_subido)
             contenido_texto = "\n".join([p.extract_text() for p in lector_pdf.pages if p.extract_text()])
+            
+        # --- CASO 3: ARCHIVO EPUB ---
+        elif archivo_subido.name.endswith(".epub"):
+            # Leer el libro desde el flujo de bytes cargado
+            libro = epub.read_epub(archivo_subido)
+            paginas_epub = []
+            
+            # Recorrer los elementos internos del EPUB que contengan texto (documentos)
+            for item in libro.get_items():
+                if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                    # Limpiar el código HTML interno usando BeautifulSoup
+                    sopa = BeautifulSoup(item.get_content(), 'html.parser')
+                    texto_limpio = sopa.get_text()
+                    if texto_limpio.strip():
+                        paginas_epub.append(texto_limpio.strip())
+            
+            contenido_texto = "\n".join(paginas_epub)
 
+        # Validación de texto extraído
         if not contenido_texto.strip():
-            st.warning("⚠️ No se detectó texto procesable en el archivo.")
+            st.warning("⚠️ No se detectó texto procesable. Verifica el formato del documento.")
         else:
             with st.expander("📄 Ver fragmento del texto extraído"):
                 st.text_area("Texto detectado:", contenido_texto[:2000] + "\n...", height=150, disabled=True)
@@ -93,7 +124,6 @@ if archivo_subido is not None:
                 
                 # Procesamos fragmento por fragmento
                 for idx, linea in enumerate(lineas):
-                    # Actualizar barra de progreso visual
                     porcentaje = int((idx + 1) / len(lineas) * 100)
                     progreso.progress(porcentaje)
                     status_text.text(f"Procesando fragmento {idx + 1} de {len(lineas)}...")
@@ -119,18 +149,16 @@ if archivo_subido is not None:
                 if audios_generados:
                     # Corrección de Dimensiones: Aplastamos las matrices 2D a arreglos planos 1D
                     audios_planos = [chunk.flatten() for chunk in audios_generados]
-                    
-                    # Concatenamos de forma segura a lo largo del eje del tiempo
                     audio_final = np.concatenate(audios_planos)
                     
                     # Generar automáticamente la ruta de salida en la carpeta del proyecto
                     nombre_base, _ = os.path.splitext(archivo_subido.name)
                     ruta_audio_salida = f"{nombre_base}_dramatizado.wav"
                     
-                    # Guardar el archivo final utilizando el método nativo del motor
+                    # Guardar el archivo final
                     engine.save_audio(wav=audio_final, output_path=ruta_audio_salida)
                     
-                    # Limpieza visual de estado y despliegue del reproductor
+                    # Limpieza visual y despliegue del reproductor
                     status_text.empty()
                     st.success("🎉 ¡Audiolibro dramatizado generado con éxito!")
                     st.info(f"💾 Guardado de forma local como: `{ruta_audio_salida}`")
